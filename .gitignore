@@ -1,0 +1,59 @@
+# =========================
+# Maven / Java
+# =========================
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Eclipse / STS
+.classpath
+.project
+.settings/
+.springBeans
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS / System files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+# Mac resource forks
+._*
+
+# Crash logs / heap dumps
+hs_err_pid*
+replay_pid*
+
+# Build / dependency cache
+.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# Environment / secrets (optional)
+.env
+*.local.properties
+
+
+# Keep wrapper scripts but ignore local caches
+!.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+mvnw.cmd
+mvnw
