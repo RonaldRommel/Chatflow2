@@ -76,7 +76,6 @@ public class LoadTestClient {
     public void runLoadTest(String ipAddress) {
         SERVER_URL="ws://"+ipAddress+":8080/chat/";
         System.out.println("\n=== Starting ChatFlow Load Test ===\n");
-        long startTime = System.currentTimeMillis();
         long endTime;
         try {
             System.out.println("Creating " + POOL_SIZE + " connections...");
@@ -85,12 +84,7 @@ public class LoadTestClient {
                 connectionPool.add(createConnection(roomId));
             }
             System.out.println("Connections created!\n");
-//            System.out.println("Phase 1: Warmup");
-//            phaseSetup(32000,32);
-//            startMessageGenerator();
-//            runPhase(1,4);
-//            endTime = System.currentTimeMillis();
-//            printResults(startTime, endTime,"Warmup Phase");
+            long startTime = System.currentTimeMillis();
             System.out.println("Phase 2: Main Phase");
             phaseSetup(500000,32);
             startMessageGenerator();
