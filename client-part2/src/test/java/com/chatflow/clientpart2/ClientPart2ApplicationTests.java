@@ -1,0 +1,13 @@
+package com.chatflow.clientpart2;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class ClientPart2ApplicationTests {
+
+    @Test
+    void contextLoads() {
+    }
+
+}

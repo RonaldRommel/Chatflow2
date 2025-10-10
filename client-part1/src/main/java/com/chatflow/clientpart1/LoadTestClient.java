@@ -1,5 +1,7 @@
 package com.chatflow.clientpart1;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.UUID;
 import com.chatflow.clientpart1.model.ChatMessage;
 import com.chatflow.clientpart1.model.ChatResponse;
@@ -13,19 +15,26 @@ import org.java_websocket.handshake.ServerHandshake;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+
+/**
+ * Client that performs load testing on a chat server.
+ * <p>
+ * Establishes multiple WebSocket connections, generates random chat messages,
+ * sends them concurrently, tracks responses, retries failed messages,
+ * and prints performance statistics.
+ */
 @Component
 public class LoadTestClient {
 
     private static  String SERVER_URL = "";
     private static  int TOTAL_MESSAGES = 32000;
-    private static  int INITIAL_THREADS = 10;
+    private static  int INITIAL_THREADS = 32;
     private static  int MESSAGES_PER_INITIAL_THREAD = TOTAL_MESSAGES / INITIAL_THREADS;
     private static ScheduledExecutorService scheduler;
     private final AtomicInteger successCount = new AtomicInteger(0);
@@ -39,22 +48,29 @@ public class LoadTestClient {
     private final Random random = new Random();
 
     private final List<WebSocketClient> connectionPool = new ArrayList<>();
-    private static final int POOL_SIZE = 10;
+    private static final int POOL_SIZE = 20;
     private static AtomicInteger connectionCounter = new AtomicInteger(0);
     private static int brokenConnections=0;
 
-    public LoadTestClient() {
+    /** Constructs the LoadTestClient and initializes the message pool. */
+    public LoadTestClient() throws IOException {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
         initMessagePool();
     }
 
+    /** Initializes the message pool with 50 sample messages. */
     private void initMessagePool() {
         for (int i = 0; i < 50; i++) {
             messagePool[i] = "Test message " + i + " - Hello from client!";
         }
     }
 
+    /**
+     * Runs the load test against the specified server IP address.
+     *
+     * @param ipAddress the server IP to connect to
+     */
     public void runLoadTest(String ipAddress) {
         SERVER_URL="ws://"+ipAddress+":8080/chat/";
         System.out.println("\n=== Starting ChatFlow Load Test ===\n");
@@ -67,31 +83,17 @@ public class LoadTestClient {
             }
             System.out.println("Connections created!\n");
             System.out.println("Phase 1: Warmup");
-            phaseSetup(32000,10);
+            phaseSetup(32000,32);
             startMessageGenerator();
             runPhase(1,3);
             long endTime = System.currentTimeMillis();
-            printResults(startTime, endTime);
+            printResults(startTime, endTime,"Warmup Phase");
             System.out.println("Phase 2: Main Phase");
-            phaseSetup(500000,10);
+            phaseSetup(500000,20);
             startMessageGenerator();
             runPhase(2,30);
-
-//            Thread monitorThread = new Thread(() -> {
-//                try {
-//                    while (failureCount.get() + successCount.get() < TOTAL_MESSAGES) {
-//                        Thread.sleep(500);
-//                    }
-//                } catch (InterruptedException e) {
-//                    Thread.currentThread().interrupt();
-//                }
-//            });
-//            System.out.println("Running Pending requests");
-//            monitorThread.start();
-//            monitorThread.join();
-//            scheduler.shutdownNow();
             endTime = System.currentTimeMillis();
-            printResults(startTime, endTime);
+            printResults(startTime, endTime,"Main Phase");
             System.out.println("\nClosing connections...");
             for (WebSocketClient client : connectionPool) {
                 if(!client.isOpen()) {
@@ -106,6 +108,7 @@ public class LoadTestClient {
         }
     }
 
+    /** Configures message count and threads for a test phase. */
     private void phaseSetup(int totalMessages, int threads) {
         TOTAL_MESSAGES = totalMessages;
         INITIAL_THREADS = threads;
@@ -115,6 +118,7 @@ public class LoadTestClient {
 
     }
 
+    /** Runs a test phase by sending messages concurrently and scheduling retries. */
     private void runPhase(int phaseNumber,int initialWait) {
         ExecutorService executor = Executors.newFixedThreadPool(INITIAL_THREADS);
         CountDownLatch latch = new CountDownLatch(INITIAL_THREADS);
@@ -141,6 +145,7 @@ public class LoadTestClient {
         System.out.println("Phase "+phaseNumber+" complete!");
     }
 
+    /** Sends a specified number of messages from the queue via WebSocket connections. */
     private void sendMessages(int count) {
         try {
             WebSocketClient client;
@@ -150,7 +155,6 @@ public class LoadTestClient {
                     break;
                 }
             }
-//            WebSocketClient client = connectionPool.get(ThreadLocalRandom.current().nextInt(POOL_SIZE));
             for (int i = 0; i < count; i++) {
                 ChatMessage msg = messageQueue.poll(5, TimeUnit.SECONDS);
                 if (msg == null) {
@@ -169,6 +173,14 @@ public class LoadTestClient {
     }
 
 
+    /**
+     * Creates and connects a WebSocketClient to a specific room.
+     *
+     * @param roomId the room ID to connect to
+     * @return the connected WebSocketClient
+     * @throws Exception if the connection fails
+     */
+
     private WebSocketClient createConnection(String roomId) throws Exception {
         URI serverUri = URI.create(SERVER_URL + roomId);
 
@@ -181,14 +193,13 @@ public class LoadTestClient {
             @Override
             public void onMessage(String message) {
                 try {
-//                    System.out.println("Message received: " + message);
                     ChatResponse response = objectMapper.readValue(message,ChatResponse.class);
                     PendingMessage pending  =pendingMessages.get(response.getMessage().getMessageID());
                     if (pending != null) {
                         pendingMessages.remove(response.getMessage().getMessageID());
                         successCount.incrementAndGet();
                     }
-                } catch (JsonProcessingException e) {
+                } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }
@@ -211,17 +222,20 @@ public class LoadTestClient {
         return client;
     }
 
+    /**
+     * Starts a scheduler to retry sending pending messages with exponential backoff.
+     *
+     * @param initialWait initial wait in seconds before starting retries
+     */
+
     private void startRetryScheduler(int initialWait) {
         scheduler = Executors.newSingleThreadScheduledExecutor();
         CountDownLatch latch = new CountDownLatch(1);
-        System.out.println("Initial Pending requests: "+pendingMessages.size());
         scheduler.scheduleWithFixedDelay(() -> {
             if (pendingMessages.isEmpty()) {
-                System.out.println("Here");
                 latch.countDown();
                 scheduler.shutdownNow();
             }
-            System.out.println("Pending requests: "+pendingMessages.size());
             long now = System.currentTimeMillis();
 
             pendingMessages.values().forEach(pending -> {
@@ -231,7 +245,6 @@ public class LoadTestClient {
                     return;
                 }
 
-                // Check if it’s time to retry based on exponential backoff
                 if (now >= pending.getNextRetryDelay() + pending.getLastAttemptTime()) {
                     int attempts = pending.getAttempts().getAndIncrement();
                     pending.setLastAttemptTime(now);
@@ -247,12 +260,13 @@ public class LoadTestClient {
                     client.send(json);
                 }
             });
-        }, initialWait, 10, TimeUnit.SECONDS); // check every 100ms (fine granularity)
+        }, initialWait, 10, TimeUnit.SECONDS);
         try {
             latch.await();
         } catch (InterruptedException e) {}
     }
 
+    /** Starts a background thread to generate random messages and add them to the queue. */
     private void startMessageGenerator() {
         Thread generator = new Thread(() -> {
             try {
@@ -269,24 +283,27 @@ public class LoadTestClient {
         generator.start();
     }
 
+    /** Generates a random ChatMessage with random user, type, content, and room. */
     private ChatMessage createRandomMessage() {
         String messageID = UUID.randomUUID().toString();
         int userId = random.nextInt(1, 100_001);
         String username = "user" + userId;
         String message = messagePool[random.nextInt(50)];
         MessageType type = selectRandomMessageType();
-
+        String roomID = String.valueOf(random.nextInt(1,21));
         ChatMessage msg = new ChatMessage();
         msg.setMessageID(messageID);
         msg.setUserID(String.valueOf(userId));
         msg.setUsername(username);
         msg.setMessage(message);
-        msg.setTimestamp(LocalDateTime.now());
+        msg.setTimestamp(Instant.now());
         msg.setMessageType(type);
+        msg.setRoomID(roomID);
 
         return msg;
     }
 
+    /** Selects a random MessageType with weighted probabilities. */
     private MessageType selectRandomMessageType() {
         double rand = random.nextDouble();
         if (rand < 0.90) return MessageType.TEXT;
@@ -294,16 +311,23 @@ public class LoadTestClient {
         else return MessageType.LEAVE;
     }
 
-    private void printResults(long startTime, long endTime) {
+
+    /**
+     * Prints performance statistics for a test phase.
+     *
+     * @param startTime start time in milliseconds
+     * @param endTime   end time in milliseconds
+     * @param phase     name of the test phase
+     */
+    private void printResults(long startTime, long endTime, String phase) {
         long duration = endTime - startTime;
         double seconds = duration / 1000.0;
         double throughput = TOTAL_MESSAGES / seconds;
-        System.out.println("\n=== Load Test Results ===");
+        System.out.println("\n=== Load Test Results: "+phase+"  ===");
         System.out.println("Total messages attempted: " + TOTAL_MESSAGES);
         System.out.println("Successful messages: " + successCount.get());
         System.out.println("Failed messages: " + failureCount.get());
         System.out.println("Total connections: " + connectionCount.get());
-        System.out.println("Connection pool size: " + POOL_SIZE);
         System.out.println("Total runtime: " + duration + " ms (" + String.format("%.2f", seconds) + " seconds)");
         System.out.println("Overall throughput: " + String.format("%.2f", throughput) + " messages/second");
         System.out.println("========================\n");
