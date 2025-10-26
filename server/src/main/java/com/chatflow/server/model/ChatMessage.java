@@ -43,8 +43,6 @@ public class ChatMessage {
 
     /** Room ID where the message was sent. 1-20. */
     @NotNull
-    @Min(1)
-    @Max(20)
     private String roomID;
 
     /**
@@ -127,5 +125,18 @@ public class ChatMessage {
 
     public void setMessageType(MessageType messageType) {
         this.messageType = messageType;
+    }
+
+    @Override
+    public String toString() {
+        return "ChatMessage{" +
+                "messageID='" + messageID + '\'' +
+                ", userID='" + userID + '\'' +
+                ", username='" + username + '\'' +
+                ", message='" + message + '\'' +
+                ", timestamp=" + timestamp +
+                ", messageType=" + messageType +
+                ", roomID='" + roomID + '\'' +
+                '}';
     }
 }

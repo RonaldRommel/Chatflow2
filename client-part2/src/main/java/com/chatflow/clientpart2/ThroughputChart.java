@@ -1,4 +1,5 @@
 package com.chatflow.clientpart2;
+
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
@@ -43,10 +44,10 @@ public class ThroughputChart {
 
                 try {
                     Instant ts = Instant.parse(parts[0].trim());
-                    long epochSeconds = ts.getEpochSecond();
+                    long epochMillis = ts.toEpochMilli();
 
-                    // Group timestamps into 10-second buckets
-                    long bucket = (epochSeconds / 10) * 10;
+                    // Use 10-second buckets (10_000 ms)
+                    long bucket = (epochMillis / 10_000) * 10_000;
                     bucketCounts.put(bucket, bucketCounts.getOrDefault(bucket, 0) + 1);
                 } catch (DateTimeParseException e) {
                     System.err.println("Skipping invalid timestamp: " + parts[0]);
@@ -59,20 +60,23 @@ public class ThroughputChart {
             return;
         }
 
+        System.out.println("Buckets generated: " + bucketCounts.size());
+
         // Convert bucket counts to throughput (messages/sec)
         long firstBucket = bucketCounts.keySet().iterator().next();
         XYSeries series = new XYSeries("Throughput (messages/sec)");
 
         for (Map.Entry<Long, Integer> entry : bucketCounts.entrySet()) {
-            double relativeTime = (entry.getKey() - firstBucket); // seconds since start
-            double throughput = entry.getValue() / 10.0; // each bucket = 10 sec
+            double relativeTime = (entry.getKey() - firstBucket) / 1000.0; // seconds since start
+            double throughput = entry.getValue() / 10.0; // messages per second (10s window)
             series.add(relativeTime, throughput);
         }
 
-        // Handle edge case: only one bucket (force a second point)
+        // Edge case: only one bucket
         if (bucketCounts.size() == 1) {
             double onlyThroughput = bucketCounts.values().iterator().next() / 10.0;
             series.add(10.0, onlyThroughput);
+            System.out.println("⚠️ Warning: All data fell into a single 10-second bucket.");
         }
 
         XYSeriesCollection dataset = new XYSeriesCollection(series);

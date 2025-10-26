@@ -11,11 +11,10 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Handles WebSocket connections for the chat server.
@@ -26,6 +25,7 @@ import java.util.Set;
 @Component
 public class WebSocketHandler extends TextWebSocketHandler {
 
+    private final AtomicInteger connectionCount = new AtomicInteger(0);
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
@@ -50,6 +50,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         String roomId = extractRoomId(session);
+        System.out.println("Connected to room: " + roomId);
+        connectionCount.incrementAndGet();
     }
 
 
@@ -62,37 +64,40 @@ public class WebSocketHandler extends TextWebSocketHandler {
      */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        String payload = message.getPayload();
-        try {
-            ChatMessage chatMessage = objectMapper.readValue(payload, ChatMessage.class);
-
-            Set<ConstraintViolation<ChatMessage>> violations = validator.validate(chatMessage);
-
-            if (!violations.isEmpty()) {
-                StringBuilder errorMessages = new StringBuilder();
-                for (ConstraintViolation<ChatMessage> violation : violations) {
-                    errorMessages.append(violation.getMessage()).append("; ");
-                }
-                sendErrorResponse(session, errorMessages.toString());
-                return;
-            }
-
+            String payload = message.getPayload();
             try {
-                int userId = Integer.parseInt(chatMessage.getUserID());
-                if (userId < 1 || userId > 100000) {
-                    sendErrorResponse(session, "UserId must be between 1 and 100000");
+                ChatMessage chatMessage = objectMapper.readValue(payload, ChatMessage.class);
+                Set<ConstraintViolation<ChatMessage>> violations = validator.validate(chatMessage);
+                if (!violations.isEmpty()) {
+                    StringBuilder errorMessages = new StringBuilder();
+                    for (ConstraintViolation<ChatMessage> violation : violations) {
+                        errorMessages.append(violation.getMessage()).append("; ");
+                    }
+                    sendErrorResponse(session, errorMessages.toString());
                     return;
                 }
-            } catch (NumberFormatException e) {
-                sendErrorResponse(session, "UserId must be a valid number");
-                return;
+
+                try {
+                    int userId = Integer.parseInt(chatMessage.getUserID());
+                    if (userId < 1 || userId > 100000) {
+                        sendErrorResponse(session, "UserId must be between 1 and 100000");
+                        return;
+                    }
+                } catch (NumberFormatException e) {
+                    sendErrorResponse(session, "UserId must be a valid number");
+                    return;
+                }
+
+                sendSuccessResponse(session, chatMessage);
+
+            } catch (Exception e) {
+                try {
+                    sendErrorResponse(session, "Invalid message format: " + e.getMessage());
+                } catch (Exception ex) {
+                    throw new RuntimeException("GOD KNOWS"+ex);
+                }
             }
 
-            sendSuccessResponse(session, chatMessage);
-
-        } catch (Exception e) {
-            sendErrorResponse(session, "Invalid message format: " + e.getMessage());
-        }
     }
 
     /**
@@ -117,7 +122,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        System.err.println("Transport error for session " + session.getId() + ": " + exception.getMessage());
+        System.err.println("Transport error for session " + session.getId() + ": " + exception.getMessage()+" Session Open:"+session.isOpen());
         if (session.isOpen()) {
             session.close(CloseStatus.SERVER_ERROR);
         }
@@ -135,6 +140,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
             System.err.println("Session closed, cannot send response");
             return;
         }
+//        System.out.println("Sending response: " + chatMessage);
         Map<String, Object> response = new HashMap<>();
         response.put("status", "SUCCESS");
         response.put("serverTimestamp", Instant.now());
@@ -159,8 +165,8 @@ public class WebSocketHandler extends TextWebSocketHandler {
         }
         Map<String, Object> response = new HashMap<>();
         response.put("status", "ERROR");
-        response.put("errorMessage", errorMessage);
-        response.put("serverTimestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        response.put("message", errorMessage);
+        response.put("serverTimestamp", Instant.now());
 
         String jsonResponse = objectMapper.writeValueAsString(response);
         session.sendMessage(new TextMessage(jsonResponse));

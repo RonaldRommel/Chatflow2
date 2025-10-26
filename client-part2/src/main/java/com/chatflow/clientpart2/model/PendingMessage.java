@@ -1,5 +1,7 @@
 package com.chatflow.clientpart2.model;
 
+import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -17,10 +19,9 @@ public class PendingMessage {
     private AtomicInteger attempts = new AtomicInteger(1);
 
     /** Timestamp of the last send attempt (milliseconds since epoch). */
-    private volatile long lastAttemptTime;
+    private volatile Instant lastAttemptTime;
 
-    /** Delay in milliseconds before the next retry. */
-    private volatile long nextRetryDelay = 200;
+    private CompletableFuture<Boolean> ack;
 
     /**
      * Constructs a PendingMessage wrapping a ChatMessage.
@@ -31,39 +32,36 @@ public class PendingMessage {
 
     public PendingMessage(ChatMessage message) {
         this.message = message;
-        this.lastAttemptTime = System.currentTimeMillis();
+        this.lastAttemptTime = Instant.now();
+        this.ack = new CompletableFuture<>();
     }
 
-    public ChatMessage getMessage() {
+    public ChatMessage getChatMessage() {
         return message;
     }
 
-    public void setMessage(ChatMessage message) {
+    public void setChatMessage(ChatMessage message) {
         this.message = message;
     }
 
-    public AtomicInteger getAttempts() {
-        return attempts;
+    public double getAttempts() {
+        return attempts.get();
     }
 
     public void setAttempts(AtomicInteger attempts) {
         this.attempts = attempts;
     }
 
-    public long getLastAttemptTime() {
+    public Instant getLastAttemptTime() {
         return lastAttemptTime;
     }
 
-    public void setLastAttemptTime(long lastAttemptTime) {
+    public void setLastAttemptTime(Instant lastAttemptTime) {
         this.lastAttemptTime = lastAttemptTime;
     }
 
-    public long getNextRetryDelay() {
-        return nextRetryDelay;
-    }
-
-    public void setNextRetryDelay(long nextRetryDelay) {
-        this.nextRetryDelay = nextRetryDelay;
+    public int incrementAttempts(){
+        return attempts.incrementAndGet();
     }
 }
 
